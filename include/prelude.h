@@ -152,6 +152,41 @@ function (integer) PAGE_ALIGN(integer addr) {
 	let rounded = addr + PAGE_SIZE() - 1;
 	rounded - (rounded % 4096)
 }
+
+// Hybrid-BV counterparts of the C macros.
+function (integer) C_PAGE_ALIGN_DOWN(integer addr) {
+	addr & 18446744073709547520
+}
+function (integer) C_PAGE_ALIGN(integer addr) {
+	((addr + 4095) % 18446744073709551616) & 18446744073709547520
+}
+function (integer) C_ALIGN8(integer addr) {
+	((addr + 7) % 18446744073709551616) & 18446744073709551608
+}
+function (boolean) C_PAGE_ALIGNED(integer addr) {
+	((addr & 4095) % 18446744073709551616) == 0
+}
+
+// Mask/alignment bridge obligations for the hybrid encoding.  Revealing these
+// mixed Int/BV conversions directly caused severe solver regressions in the
+// allocator, whereas the constant shift conversions are revealed locally.
+// These declarations are ghost-only and terminating; their Rocq proofs are
+// intentionally left for future work.
+lemma LemmaCPageAlignDown(integer addr)
+	requires 0 <= addr; addr <= 18446744073709551615;
+	ensures C_PAGE_ALIGN_DOWN(addr) == PAGE_ALIGN_DOWN(addr);
+
+lemma LemmaCPageAlign(integer addr)
+	requires 0 <= addr; PAGE_ALIGN(addr) <= 18446744073709551615;
+	ensures C_PAGE_ALIGN(addr) == PAGE_ALIGN(addr);
+
+lemma LemmaCAlign8(integer addr)
+	requires 0 <= addr; cn_ALIGN(addr, 8) <= 18446744073709551615;
+	ensures C_ALIGN8(addr) == cn_ALIGN(addr, 8);
+
+lemma LemmaCPageAligned(integer addr)
+	requires 0 <= addr; addr <= 18446744073709551615;
+	ensures C_PAGE_ALIGNED(addr) == cn_IS_ALIGNED(addr);
 @*/
 
 /*
