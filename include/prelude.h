@@ -167,14 +167,11 @@ function (boolean) C_PAGE_ALIGNED(integer addr) {
 	((addr & 4095) % 18446744073709551616) == 0
 }
 
-// Pure logical proof obligations for the hybrid encoding.  These declarations
-// do not manipulate C state and have no recursive computation, so their
-// eventual proofs are ghost-only and terminating.  Their Rocq proofs are
+// Mask/alignment bridge obligations for the hybrid encoding.  Revealing these
+// mixed Int/BV conversions directly caused severe solver regressions in the
+// allocator, whereas the constant shift conversions are revealed locally.
+// These declarations are ghost-only and terminating; their Rocq proofs are
 // intentionally left for future work.
-lemma LemmaShiftLeftOneTwelve()
-	requires true;
-	ensures shift_left(1, 12) == 4096;
-
 lemma LemmaCPageAlignDown(integer addr)
 	requires 0 <= addr; addr <= 18446744073709551615;
 	ensures C_PAGE_ALIGN_DOWN(addr) == PAGE_ALIGN_DOWN(addr);

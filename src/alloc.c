@@ -1517,7 +1517,7 @@ static int chunk_install(struct chunk_hdr *chunk, size_t size,
                                 member_shift<struct hyp_allocator>(allocator, chunks), next)));
                 @*/
                 list_add(&chunk->node, &allocator->chunks);
-                /*@ apply LemmaShiftLeftOneTwelve(); @*/
+                /*@ instantiate reveal_bv, shift_left(1, 12); @*/
                 /*@ apply LemmaCPageAlign(Cn_chunk_size(size)); @*/
                 chunk->mapped_size = PAGE_ALIGN(chunk_size(size));
                 chunk->alloc_size = size;
@@ -1664,7 +1664,7 @@ static size_t chunk_needs_mapping(struct chunk_hdr *chunk, size_t size)
         if (mapping_needs <= chunk->mapped_size)
                 return 0;
 
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAlign(
                 Cn_chunk_size(size) - (integer)C_pre.mapped_size); @*/
         mapping_missing = PAGE_ALIGN(mapping_needs - chunk->mapped_size);
@@ -1857,7 +1857,7 @@ static unsigned long chunk_addr_fixup(unsigned long addr)
     ensures return == Cn_chunk_addr_fixup(addr);
 @*/
 {
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAlignDown(addr); @*/
         unsigned long min_chunk_size = chunk_size(0UL);
         unsigned long page = PAGE_ALIGN_DOWN(addr);
@@ -2192,7 +2192,7 @@ static int setup_first_chunk(struct hyp_allocator *allocator, size_t size)
 {
         int ret;
 
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAlign(Cn_chunk_size(size)); @*/
         ret = hyp_allocator_map(allocator, allocator->start,
                                 PAGE_ALIGN(chunk_size(size)));
@@ -3248,7 +3248,7 @@ ensures
         if (chunk_is_used(chunk))
                 return false;
 
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAligned((integer)chunk); @*/
         if (!PAGE_ALIGNED(chunk))
                 return false;
@@ -3294,7 +3294,7 @@ ensures
         (start <= end ? end - start : 0) == return;
 @*/
 {
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAlignDown(
                 C.header_address + (integer)C.mapped_size); @*/
         /*@ apply LemmaCPageAlign(
@@ -3462,7 +3462,7 @@ int hyp_alloc_init(unsigned long size)
         struct hyp_allocator *allocator = &hyp_allocator;
         int ret;
 
-        /*@ apply LemmaShiftLeftOneTwelve(); @*/
+        /*@ instantiate reveal_bv, shift_left(1, 12); @*/
         /*@ apply LemmaCPageAlign(size); @*/
         size = PAGE_ALIGN(size);
 
