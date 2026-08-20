@@ -1183,6 +1183,9 @@ predicate ({cn_hyp_allocator ha, cn_lseg lseg}) ChunkInstallPre(pointer chunk, i
                 let ha = a_in.ha;
                 assert(ptr_eq(ha.head,ha.first));
 
+                assert(shift_left(1, 12) == 4096);
+                assert(C_PAGE_ALIGN(Cn_chunk_size(size))
+                        == PAGE_ALIGN(Cn_chunk_size(size)));
                 assert(size <= (integer)ha.size);
                 assert(PAGE_ALIGN(Cn_chunk_size(size)) <= (integer)a_in.ha.size);
                 assert(ha.start == (integer)chunk);
@@ -1648,8 +1651,13 @@ static size_t chunk_needs_mapping(struct chunk_hdr *chunk, size_t size)
                 take C_pre = Own_chunk_hdr(chunk);
                 Cn_chunk_size(size) <= 18446744073709551615;
                 Cn_chunk_size(size) > (integer)C_pre.mapped_size implies
+                        shift_left(1, 12) == 4096;
+                Cn_chunk_size(size) > (integer)C_pre.mapped_size implies
                         PAGE_ALIGN(Cn_chunk_size(size) - (integer)C_pre.mapped_size)
                                 <= 18446744073709551615;
+                Cn_chunk_size(size) > (integer)C_pre.mapped_size implies
+                        C_PAGE_ALIGN(Cn_chunk_size(size) - (integer)C_pre.mapped_size)
+                                == PAGE_ALIGN(Cn_chunk_size(size) - (integer)C_pre.mapped_size);
         ensures
                 take C_post = Own_chunk_hdr(chunk);
                 C_pre == C_post;
@@ -1850,6 +1858,8 @@ function (integer) Cn_chunk_addr_fixup(integer addr)
 
 static unsigned long chunk_addr_fixup(unsigned long addr)
 /*@
+    requires shift_left(1, 12) == 4096;
+    C_PAGE_ALIGN_DOWN(addr) == PAGE_ALIGN_DOWN(addr);
     ensures return == Cn_chunk_addr_fixup(addr);
 @*/
 {
@@ -1964,6 +1974,14 @@ static int chunk_recycle(struct chunk_hdr *chunk, size_t size,
         new_chunk_addr_ >= (integer)chunk;
         let chunk_va_size_post = new_chunk_addr_ - (integer)chunk;
         let new_chunk_va_size = (integer)((integer)C_pre.va_size - chunk_va_size_post);
+        let can_split_ = Cn_chunk_can_split(HA_pre.lseg, new_chunk_addr_);
+        let expected_mapping_ = can_split_ ? chunk_va_size_post : size;
+        shift_left(1, 12) == 4096;
+        C_PAGE_ALIGN_DOWN((integer)chunk + Cn_chunk_size(size))
+                == PAGE_ALIGN_DOWN((integer)chunk + Cn_chunk_size(size));
+        Cn_chunk_size(expected_mapping_) > (integer)C_pre.mapped_size implies
+                C_PAGE_ALIGN(Cn_chunk_size(expected_mapping_) - (integer)C_pre.mapped_size)
+                        == PAGE_ALIGN(Cn_chunk_size(expected_mapping_) - (integer)C_pre.mapped_size);
     ensures
         take HA_post = Cn_hyp_allocator_focusing_on(allocator, chunk);
 
@@ -2176,6 +2194,8 @@ static int setup_first_chunk(struct hyp_allocator *allocator, size_t size)
     requires take a_in=Cn_hyp_allocator(allocator);
     ptr_eq(a_in.ha.head, a_in.ha.first);
     size >= MIN_ALLOC();
+    shift_left(1, 12) == 4096;
+    C_PAGE_ALIGN(Cn_chunk_size(size)) == PAGE_ALIGN(Cn_chunk_size(size));
     PAGE_ALIGN(Cn_chunk_size(size)) >= size; // no overflow
     PAGE_ALIGN(Cn_chunk_size(size)) <= 18446744073709551615;
     size % 8 == 0;
@@ -2920,18 +2940,31 @@ void *hyp_alloc(unsigned long size)
         accesses hyp_allocator_errno, hyp_allocator_mc;
         requires
                 take HA_pre = Cn_hyp_allocator(&hyp_allocator);
+                size <= 4294967295 implies
+                        C_ALIGN8(size == 0 ? MIN_ALLOC() : size)
+                                == cn_ALIGN(size == 0 ? MIN_ALLOC() : size, MIN_ALLOC());
+                let actual_size = cn_ALIGN(size == 0 ? MIN_ALLOC() : size, MIN_ALLOC());
+                shift_left(1, 12) == 4096;
+                C_PAGE_ALIGN(Cn_chunk_size(actual_size))
+                        == PAGE_ALIGN(Cn_chunk_size(actual_size));
+                each (integer n; 0 <= n && n <= 18446744073709551615) {
+                        C_PAGE_ALIGN_DOWN(n) == PAGE_ALIGN_DOWN(n)
+                };
+                each (integer n; 0 <= n && n + 4095 <= 18446744073709551615) {
+                        C_PAGE_ALIGN(n) == PAGE_ALIGN(n)
+                };
         ensures
                 take HA_post = Cn_hyp_allocator(&hyp_allocator);
                 take U = MaybeCn_char_array(return, size);
 
-                let actual_size = cn_ALIGN(size == 0 ? MIN_ALLOC() : size, MIN_ALLOC());
                 take V = MaybeCn_char_array_with_offset(return, actual_size - size, size);
 @*/
 {
         struct hyp_allocator *allocator = &hyp_allocator;
         struct chunk_hdr *chunk, *last_chunk;
         unsigned long chunk_addr;
-        size_t missing_map;
+        size_t missing_map, expected_mapping;
+        u32 last_mapped_size;
         int ret = 0;
         /* CN */ int cn_flag = 1;
         /* constrained by chunk_hdr *_size types */
@@ -2944,6 +2977,7 @@ void *hyp_alloc(unsigned long size)
 #ifdef __CN_VERIFY
         /* CN */ int no_free_chunk = 0;
         unsigned long original_size = size;
+        u32 free_chunk_mapped_size;
 #endif
 
         // size = ALIGN(size ?: MIN_ALLOC, MIN_ALLOC);
@@ -2984,6 +3018,16 @@ void *hyp_alloc(unsigned long size)
         chunk = get_free_chunk(allocator, size);
         if (chunk) {
 	        /*@ unpack GetFreeChunk(...); @*/
+#ifdef __CN_VERIFY
+                free_chunk_mapped_size = chunk->mapped_size;
+                /*@ instantiate (integer)chunk + Cn_chunk_size(size); @*/
+                /*@ instantiate Cn_chunk_size(size) -
+                        (integer)free_chunk_mapped_size; @*/
+                /*@ instantiate Cn_chunk_size(
+                        Cn_chunk_addr_fixup((integer)chunk + Cn_chunk_size(size)) -
+                                (integer)chunk) -
+                        (integer)free_chunk_mapped_size; @*/
+#endif
                 ret = chunk_recycle(chunk, size, allocator);
                 goto end;
         }
@@ -3015,12 +3059,16 @@ void *hyp_alloc(unsigned long size)
                         member_shift<struct hyp_allocator>(allocator, chunks), next)));
         @*/
         chunk_addr = (unsigned long)last_chunk + chunk_size(last_chunk->alloc_size);
+        /*@ instantiate chunk_addr; @*/
         chunk_addr = chunk_addr_fixup(chunk_addr);
         chunk = (struct chunk_hdr *)chunk_addr;
 
-        missing_map = chunk_needs_mapping(last_chunk,
-                                          chunk_addr + chunk_size(size) -
-                                                (unsigned long)chunk_data(last_chunk));
+        expected_mapping = chunk_addr + chunk_size(size) -
+                                (unsigned long)chunk_data(last_chunk);
+        last_mapped_size = last_chunk->mapped_size;
+        /*@ instantiate Cn_chunk_size(expected_mapping) -
+                (integer)last_mapped_size; @*/
+        missing_map = chunk_needs_mapping(last_chunk, expected_mapping);
         if (missing_map) {
                 ret = chunk_inc_map(last_chunk, missing_map, allocator);
                 if (ret){
@@ -3230,6 +3278,9 @@ static bool chunk_destroyable(struct chunk_hdr *chunk,
 requires
         take HA = Cn_hyp_allocator_focusing_on(allocator, chunk);
         let C = HA.lseg.chunk;
+        C.alloc_size == 0 implies shift_left(1, 12) == 4096;
+        C.alloc_size == 0 implies
+                C_PAGE_ALIGNED((integer)chunk) == cn_IS_ALIGNED((integer)chunk);
 ensures
         take HA_post = Cn_hyp_allocator_focusing_on(allocator, chunk);
         HA == HA_post;
@@ -3273,6 +3324,13 @@ static size_t chunk_reclaimable(struct chunk_hdr *chunk,
 requires
         take HA = Cn_hyp_allocator_focusing_on(allocator, chunk);
         let C = HA.lseg.chunk;
+        shift_left(1, 12) == 4096;
+        C.alloc_size == 0 implies
+                C_PAGE_ALIGNED((integer)chunk) == cn_IS_ALIGNED((integer)chunk);
+        C_PAGE_ALIGN_DOWN(C.header_address + (integer)C.mapped_size)
+                == PAGE_ALIGN_DOWN(C.header_address + (integer)C.mapped_size);
+        C_PAGE_ALIGN((integer)chunk + Cn_chunk_size((integer)C.alloc_size))
+                == PAGE_ALIGN((integer)chunk + Cn_chunk_size((integer)C.alloc_size));
         PAGE_ALIGN((integer)chunk + Cn_chunk_size((integer)C.alloc_size))
                 <= 18446744073709551615;
 ensures
@@ -3436,6 +3494,8 @@ int hyp_alloc_init(unsigned long size)
       __io_map_base > 0; __io_map_base + PAGE_ALIGN(size) > __io_map_base;
       __io_map_base + PAGE_ALIGN(size) + Cn_chunk_size(0) <= 18446744073709551615;
       PAGE_ALIGN(size) <= 18446744073709551615;
+      shift_left(1, 12) == 4096;
+      C_PAGE_ALIGN(size) == PAGE_ALIGN(size);
       __io_map_base % 8 == 0;
       size % 8 == 0;
       (integer)&hyp_allocator > 0;
