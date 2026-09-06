@@ -88,7 +88,7 @@ function (integer) EINVAL() {
 }
 function (integer) cn_ALIGN(integer x, integer a) {
 	let rounded = x + 7;
-	rounded - (rounded % 8)
+	rounded - mod(rounded, 8)
 }
 @*/
 
@@ -125,7 +125,7 @@ function (integer) PAGE_SIZE() {
 }
 
 function (boolean) cn_IS_ALIGNED(integer addr) {
-	(addr % 4096) == 0
+	mod(addr, 4096) == 0
 }
 
 @*/
@@ -146,11 +146,11 @@ static unsigned long c_PAGE_ALIGN_DOWN(unsigned long long addr)
 
 /*@
 function (integer) PAGE_ALIGN_DOWN(integer addr) {
-	addr - (addr % 4096)
+	addr - mod(addr, 4096)
 }
 function (integer) PAGE_ALIGN(integer addr) {
 	let rounded = addr + PAGE_SIZE() - 1;
-	rounded - (rounded % 4096)
+	rounded - mod(rounded, 4096)
 }
 
 // UF-shaped counterparts of the C macros.
@@ -158,13 +158,13 @@ function (integer) C_PAGE_ALIGN_DOWN(integer addr) {
 	addr & 18446744073709547520
 }
 function (integer) C_PAGE_ALIGN(integer addr) {
-	((addr + 4095) % 18446744073709551616) & 18446744073709547520
+	mod(addr + 4095, 18446744073709551616) & 18446744073709547520
 }
 function (integer) C_ALIGN8(integer addr) {
-	((addr + 7) % 18446744073709551616) & 18446744073709551608
+	mod(addr + 7, 18446744073709551616) & 18446744073709551608
 }
 function (boolean) C_PAGE_ALIGNED(integer addr) {
-	((addr & 4095) % 18446744073709551616) == 0
+	mod(addr & 4095, 18446744073709551616) == 0
 }
 
 // Pure logical proof obligations for the UF encoding.  These declarations do
