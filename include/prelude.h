@@ -88,7 +88,7 @@ function (integer) EINVAL() {
 }
 function (integer) cn_ALIGN(integer x, integer a) {
 	let rounded = x + 7;
-	rounded - (rounded % 8)
+	rounded - mod(rounded, 8)
 }
 @*/
 
@@ -125,7 +125,7 @@ function (integer) PAGE_SIZE() {
 }
 
 function (boolean) cn_IS_ALIGNED(integer addr) {
-	(addr % 4096) == 0
+	mod(addr, 4096) == 0
 }
 
 @*/
@@ -146,12 +146,50 @@ static unsigned long c_PAGE_ALIGN_DOWN(unsigned long long addr)
 
 /*@
 function (integer) PAGE_ALIGN_DOWN(integer addr) {
-	addr - (addr % 4096)
+	addr - mod(addr, 4096)
 }
 function (integer) PAGE_ALIGN(integer addr) {
 	let rounded = addr + PAGE_SIZE() - 1;
-	rounded - (rounded % 4096)
+	rounded - mod(rounded, 4096)
 }
+
+// UF-shaped counterparts of the C macros.
+function (integer) C_PAGE_ALIGN_DOWN(integer addr) {
+	addr & 18446744073709547520
+}
+function (integer) C_PAGE_ALIGN(integer addr) {
+	mod(addr + 4095, 18446744073709551616) & 18446744073709547520
+}
+function (integer) C_ALIGN8(integer addr) {
+	mod(addr + 7, 18446744073709551616) & 18446744073709551608
+}
+function (boolean) C_PAGE_ALIGNED(integer addr) {
+	mod(addr & 4095, 18446744073709551616) == 0
+}
+
+// Pure logical proof obligations for the UF encoding.  These declarations do
+// not manipulate C state and have no recursive computation, so their eventual
+// proofs are ghost-only and terminating.  Their Rocq proofs are intentionally
+// left for future work.
+lemma LemmaShiftLeftOneTwelve()
+	requires true;
+	ensures shift_left(1, 12) == 4096;
+
+lemma LemmaCPageAlignDown(integer addr)
+	requires 0 <= addr; addr <= 18446744073709551615;
+	ensures C_PAGE_ALIGN_DOWN(addr) == PAGE_ALIGN_DOWN(addr);
+
+lemma LemmaCPageAlign(integer addr)
+	requires 0 <= addr; PAGE_ALIGN(addr) <= 18446744073709551615;
+	ensures C_PAGE_ALIGN(addr) == PAGE_ALIGN(addr);
+
+lemma LemmaCAlign8(integer addr)
+	requires 0 <= addr; cn_ALIGN(addr, 8) <= 18446744073709551615;
+	ensures C_ALIGN8(addr) == cn_ALIGN(addr, 8);
+
+lemma LemmaCPageAligned(integer addr)
+	requires 0 <= addr; addr <= 18446744073709551615;
+	ensures C_PAGE_ALIGNED(addr) == cn_IS_ALIGNED(addr);
 @*/
 
 /*

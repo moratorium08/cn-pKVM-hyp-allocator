@@ -155,7 +155,7 @@ predicate void MaybeCn_char_array_with_offset(pointer p, integer size, integer o
 
 function (pointer) my_container_of_chunk_hdr (pointer p)
 {
-     (pointer)((integer)p - (integer)offsetof(chunk_hdr, node))
+     (pointer)((integer)p - offsetof(chunk_hdr, node))
 }
 function (boolean) is_last_chunk(pointer node_address, struct hyp_allocator ha)
 {
@@ -176,12 +176,12 @@ predicate (cn_hyp_allocator) Cn_hyp_allocator_only(pointer p)
         assert(!is_null(cn_hyp.head));
         assert(!is_null(cn_hyp.first));
         assert(!is_null(cn_hyp.last));
-        assert(ha.start < (integer)cn_hyp.start + (integer)cn_hyp.size);
-        assert((integer)cn_hyp.start + (integer)cn_hyp.size + Cn_chunk_size(0)
+        assert(ha.start < cn_hyp.start + cn_hyp.size);
+        assert(cn_hyp.start + cn_hyp.size + Cn_chunk_size(0)
                 <= 18446744073709551615);
-        assert((integer)cn_hyp.size <= 4294967295);
+        assert(cn_hyp.size <= 4294967295);
         assert(ha.start > 0);
-        assert((integer)ha.start % 8 == 0);
+        assert(mod(ha.start, 8) == 0);
 
         return cn_hyp;
 }
@@ -197,8 +197,8 @@ predicate (cn_chunk_hdr_raw) Own_chunk_hdr(pointer chunk)
         take node = RW<struct list_head>(member_shift<struct chunk_hdr>(chunk, node));
         assert((integer)node.next != 0);
         assert((integer)node.prev != 0);
-        assert((integer)chunk % 8 == 0);
-        assert((integer)alloc_size % 8 == 0);
+        assert(mod((integer)chunk, 8) == 0);
+        assert(mod(alloc_size, 8) == 0);
         assert(!is_null(node.next));
         assert(!is_null(node.prev));
         take hash = RW<unsigned>(member_shift<struct chunk_hdr>(chunk, hash));
@@ -219,7 +219,7 @@ predicate ({cn_chunk_hdr Hdr, struct list_head Node}) Cn_chunk_hdr_inner(pointer
         assert(!is_null(header_address));
         take hdr = Own_chunk_hdr(header_address);
 
-        let end = ha.start + (integer)ha.size;
+        let end = ha.start + ha.size;
         // The following does not hold, because the node.next can be ha.head.
         // assert(check_node implies (integer)hdr.node.next <= end);
 
@@ -233,11 +233,11 @@ predicate ({cn_chunk_hdr Hdr, struct list_head Node}) Cn_chunk_hdr_inner(pointer
                 header_address : (integer) header_address,
                 alloc_size : hdr.alloc_size,
                 mapped_size : hdr.mapped_size,
-                va_size: (integer)va_size
+                va_size: va_size
         };
 
         let valid_chunk = Option_u64_none {} == alloc_size_opt;
-        assert((valid_chunk && valid_mapped_size) implies (integer)hdr.alloc_size + Cn_chunk_hdr_size() <= (integer)hdr.mapped_size);
+        assert((valid_chunk && valid_mapped_size) implies hdr.alloc_size + Cn_chunk_hdr_size() <= hdr.mapped_size);
         // LemmaCreateNewChunk
         assert(valid_mapped_size implies cn_hdr.mapped_size <= cn_hdr.va_size);
         assert(valid_chunk implies cn_hdr.va_size <= ha.size);
@@ -245,19 +245,19 @@ predicate ({cn_chunk_hdr Hdr, struct list_head Node}) Cn_chunk_hdr_inner(pointer
         // own chunk data
         let alloc_size = match alloc_size_opt {
                 Option_u64_none {} => {
-                        (integer)cn_hdr.alloc_size
+                        cn_hdr.alloc_size
                 }
                 Option_u64_some {value: v} => {
                         v
                 }
         };
         let start = array_shift<byte>(header_address, Cn_chunk_hdr_size() + alloc_size );
-        let size_owned_by_ha = (integer)cn_hdr.va_size -  Cn_chunk_hdr_size() - alloc_size;
+        let size_owned_by_ha = cn_hdr.va_size -  Cn_chunk_hdr_size() - alloc_size;
         take A = Cn_char_array(start, size_owned_by_ha);
 
         // check non-overlappingness
         assert(cn_hdr.header_address >= ha.start);
-        let chunk_end = cn_hdr.header_address + (integer) cn_hdr.mapped_size;
+        let chunk_end = cn_hdr.header_address + cn_hdr.mapped_size;
         assert(valid_mapped_size implies chunk_end <= end);
         // HK: needed to ensure no-integer overflow?
         assert(valid_mapped_size implies chunk_end >= cn_hdr.header_address);
@@ -319,7 +319,7 @@ predicate (datatype cn_chunk_option) Maybe_Cn_chunk_hdr(pointer header_address, 
 predicate [rec] (datatype cn_chunk_hdrs) Cn_chunk_hdrs(pointer p, pointer prev,  pointer last_node, cn_hyp_allocator_core ha)
 {
         if (ptr_eq(p,ha.head)) {
-                assert(ha.start <= ha.start + (integer)ha.size);
+                assert(ha.start <= ha.start + ha.size);
                 assert(ptr_eq(prev, last_node));
                 // I think this is incorrect, because now that we use this predicate
                 // for list segments, `last` no longer necesarily refers to
@@ -346,7 +346,7 @@ predicate [rec] (datatype cn_chunk_hdrs) Cn_chunk_hdrs(pointer p, pointer prev, 
 predicate [rec] (datatype cn_chunk_hdrs) Cn_chunk_hdrs_rev(pointer p, pointer next, pointer first_chunk_node, cn_hyp_allocator_core ha)
 {
         if (ptr_eq(p,ha.head)) {
-                assert(ha.start <= ha.start + (integer)ha.size);
+                assert(ha.start <= ha.start + ha.size);
                 assert(ptr_eq(next, first_chunk_node));
                 return Chunk_nil {};
         } else {
@@ -374,7 +374,7 @@ type_synonym cn_lseg = {
 predicate ({cn_hyp_allocator ha, cn_lseg lseg}) Cn_hyp_allocator_focusing_on( pointer p, pointer chunk) { // p points to a struct hyp_allocator
   take ha_full = Cn_hyp_allocator_only(p);
   let ha = {head: ha_full.head, start: ha_full.start, size: ha_full.size, first: ha_full.first};
-  let end = ha.start + (integer)ha.size;
+  let end = ha.start + ha.size;
   assert(ha.start < end);  // no overflow
 
   // own this chunk
@@ -397,7 +397,7 @@ predicate ({cn_hyp_allocator ha, cn_lseg lseg}) Cn_hyp_allocator_focusing_on( po
 // as it temporarily breaks the invariant.
 predicate ({cn_chunk_hdr Hdr, struct list_head Node, integer va_size}) Cn_chunk_hdr_for_install(pointer header_address, pointer chunk, cn_hyp_allocator_core ha,  option_u64 alloc_size_opt, boolean valid_mapped_size)
 {
-        let end = ha.start + (integer)ha.size;
+        let end = ha.start + ha.size;
         let va_size_1 = (integer)chunk - (integer)header_address;
         take P = Cn_chunk_hdr_inner(header_address, ha, Option_u64_some{value:va_size_1} , true, Option_u64_none{}, valid_mapped_size);
 
@@ -414,7 +414,7 @@ predicate ({cn_chunk_hdr Hdr, struct list_head Node, integer va_size}) Cn_chunk_
 predicate ({cn_hyp_allocator ha, cn_lseg lseg, integer va_size}) Cn_hyp_allocator_focusing_on_for_install( pointer p, pointer prev, pointer chunk,  option_u64 alloc_size_opt, boolean valid_mapped_size) {
   take ha_full = Cn_hyp_allocator_only(p);
   let ha = {head: ha_full.head, start: ha_full.start, size: ha_full.size, first: ha_full.first};
-  let end = ha.start + (integer)ha.size;
+  let end = ha.start + ha.size;
   assert(ha.start < end);  // no overflow
 
   // own this chunk
@@ -470,7 +470,7 @@ lemma ListSegAfterNull (pointer allocator, pointer result)
 predicate (void) FirstAllocation(pointer start, integer size, boolean cond)
 {
         if (cond) {
-                take X = Cn_char_array(start, (integer)size);
+                take X = Cn_char_array(start, size);
                 return;
         } else {
                 return;
@@ -480,7 +480,7 @@ predicate (void) FirstAllocation(pointer start, integer size, boolean cond)
 predicate ({cn_hyp_allocator ha, datatype cn_chunk_hdrs hdrs}) Cn_hyp_allocator( pointer p ) { // p points to a struct hyp_allocator
   take ha_full = Cn_hyp_allocator_only(p);
   let ha = {head: ha_full.head, first: ha_full.first, start: ha_full.start, size: ha_full.size};
-  let end = ha.start + (integer)ha.size;
+  let end = ha.start + ha.size;
   assert(ha.start < end);  // no overflow
   take hdrs = Cn_chunk_hdrs(ha.first, ha.head, ha_full.last, ha);
   take C = FirstAllocation((pointer)ha.start, ha.size, ptr_eq(ha.first, ha.head));
@@ -492,7 +492,7 @@ predicate ({cn_hyp_allocator ha, datatype cn_chunk_hdrs hdrs}) Cn_hyp_allocator(
 function (boolean) is_free_chunk(cn_chunk_hdr hdr, integer size)
 {
            hdr.alloc_size == 0 // i.e., unused
-        && (integer) hdr.va_size // the code's available_size
+        && hdr.va_size // the code's available_size
         >= Cn_chunk_size(size)
         // we ignore the hash check of the chunk_get macro - even though to
         // prove safety of the actual code we would need to check the hash
